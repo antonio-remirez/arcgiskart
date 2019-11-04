@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="initial-scale=1,maximum-scale=1,user-scalable=no"
+    />
+    <title>Movidas de JS-3D</title>
+
+    <link
+      rel="stylesheet"
+      href="https://js.arcgis.com/4.13/esri/themes/light/main.css"
+    />
+    <script src="https://js.arcgis.com/4.13/"></script>
+
+    <style>
+      html,
+      body,
+      #viewDiv {
+        padding: 0;
+        margin: 0;
+        height: 100%;
+        width: 100%;
+      }
+
+      #paneDiv {
+        padding: 10px;
+        max-width: 200px;
+        background-color: rgba(255, 255, 255, 0.8);
+        font-size: 1.1em;
+      }
+
+      #credits {
+        font-size: 0.7em;
+        line-height: 1.1em;
+      }
+    </style>
+    <script>
+      require([
+        "esri/views/SceneView",
+        "esri/WebScene",
+        "esri/Map",
+        "esri/layers/GraphicsLayer",
+        "esri/widgets/Sketch/SketchViewModel",
+		"dojo/_base/lang",
+		"esri/Graphic",
+		"esri/layers/FeatureLayer",
+		"esri/Camera"
+      ], function(SceneView, WebScene, Map, GraphicsLayer, SketchViewModel, lang, Graphic, FeatureLayer, Camera) {
+	  
+        // load web scene from ArcGIS Online
+        const webScene = new WebScene({
+          portalItem: {
+            //id: "e3107f1117cb4cd5b65f5fe8687edeb9" // cabarceno arr
+			id: "7a637e199e7e443cac644407d3d6028c" // cabarceno isaac
+			//id: "c0d88a6065c34d6399946100b1cc3825" // isaac 2
+          }
+        });
+
+        const view = new SceneView({
+          container: "viewDiv",
+          map: webScene
+        });
+		this.view = view;
+		this.featureLayerView = null;
+		
+		view.on("click", function(event) {
+		  console.log("click event: ", event);
+		});
+		
+		const featureLayer = new FeatureLayer({
+          url:
+            "https://services.arcgis.com/xSOV2g97BMDGFmut/arcgis/rest/services/Zonas_Cab%C3%A1rceno/FeatureServer/0",
+			opacity: 0,
+          outFields: ["OBJECTID", "Zona"] 
+        });
+        this.view.map.add(featureLayer);
+		
+		
+		view.whenLayerView(featureLayer).then(function(layerView) {
+		  this.featureLayerView = layerView;
+		});
+        
+        view.when(function() {
+		
+			const graphicsLayer = new GraphicsLayer({id:'marioKart'});
+			this.view.map.add(graphicsLayer);
+
+			const graphicsLayer2 = new GraphicsLayer({id:'luigiKart'});
+			this.view.map.add(graphicsLayer2);
+				
+			let pointSymbol = {
+				type: "point-3d",
+				symbolLayers: [
+				  {
+					type: "object",
+					resource: {
+					  href: "./mario/scene.glb"
+					},
+					heading: this.view.viewpoint.rotation, 
+					height: 20,
+					width: 20
+				  }
+				]
+			};
+				
+			const firstPoint = {
+				type: "point",  
+				longitude: -3.8206369663477444, 
+				latitude: 43.358857685839986 
+			};				
+			const firstMario = new Graphic({
+				geometry: firstPoint,
+				symbol: pointSymbol
+			});
+			graphicsLayer.add(firstMario);
+
+			const firstLuigi = new Graphic({
+				geometry: firstPoint,
+				symbol: pointSymbol
+			});
+			graphicsLayer2.add(firstLuigi);
+
+			window.requestAnimationFrame(gameloop);	
+			
+        }).catch(console.error);
+		
+
+		this.camera = 1;
+		function setCamera(camera){
+			var cam = null;
+			if(camera && camera != this.camera){
+				this.camera = camera;
+				this.view.goTo(this.view.map.presentation.slides.items[camera-1].viewpoint.camera).then(function(){
+					
+				});
+			}
+		};
+
+		function gameloop(){
+		
+			let gamepads = navigator.getGamepads();
+            if (gamepads && gamepads.length > 0) {
+			
+				// bloquear el gamepad para el moviemiento de la cámara 
+				if(this.view.input.gamepad.devices.items[3]){
+					this.view.input.gamepad.devices.items[3] = null;
+				}
+				if(this.view.navigation.gamepad){
+					this.view.navigation.gamepad.enabled = false;
+				}
+				
+				// Joy-Con Nintendo Switch
+				// Xbox 360 Controller
+				let joycon = null;
+				let xbox = null;
+				for (let i = 0; i < gamepads.length; i++){
+					if(gamepads[i] && gamepads[i].id && gamepads[i].id.startsWith("Joy-Con")){
+						joycon = gamepads[i];
+					}
+					else if(gamepads[i] && gamepads[i].id && gamepads[i].id.startsWith("Xbox")){
+						xbox = gamepads[i];
+					}
+				}
+				
+				// having fun at ARR-home
+				if(xbox && !joycon){joycon = xbox;}
+				if(joycon != null){
+				
+					let marioLayer = this.view.map.findLayerById("marioKart");
+					let mario = marioLayer.graphics.items[0];
+					if(mario){
+						
+						// where is mario?
+						this.featureLayerView.queryFeatures({
+							geometry: mario.geometry,
+							returnGeometry: false,
+							outFields: ["OBJECTID", "Zona"]
+						}).then(function(results){
+							if(results.features.length == 1){
+								setCamera(results.features[0].attributes.Zona);
+							}
+						});
+
+						let point = getNewPosition(joycon.axes[0], joycon.axes[1], this.view.viewpoint.rotation, mario);
+						if(point != null){
+							newMario = new Graphic({
+							  geometry: point != null ? point : mario.geometry,
+							  symbol: mario.symbol
+							});
+							marioLayer.graphics.removeAll();
+							marioLayer.graphics.add(newMario);
+						}	
+					}
+				}
+				if(xbox != null){
+					let luigiLayer = this.view.map.findLayerById("luigiKart");
+					let luigi = luigiLayer.graphics.items[0];
+					if(luigi){
+					
+						let newLuigi;
+						let point = getNewPosition(xbox.axes[0], xbox.axes[1], this.view.viewpoint.rotation, luigi);
+						
+						if(point != null){
+							newLuigi = new Graphic({
+								geometry: point != null ? point : luigi.geometry,
+								symbol: luigi.symbol
+							});
+							luigiLayer.graphics.removeAll();
+							luigiLayer.graphics.add(newLuigi);
+						}
+					}
+				}
+			}
+			window.requestAnimationFrame(gameloop);
+		};
+		
+		// Calculamos la nueva posición en base a los axes, la rotación del mapa y la posición actual		
+		function getNewPosition(axe0, axe1, rotation, mario){
+
+			let point = null;
+
+			// axes 0 y 1 hacen referencia al joycon izquierdo (mover)
+			// axes 0 es el eje X siendo 1 a la derecha (0 neutro)
+			// axes 1 es el eje Y siendo 1 hacia abajo (0 neutro)
+
+			// derecha y arriba
+			if(axe0 > 0.6 && axe1 < -0.6){						
+				if(rotation > 327 || rotation < 33){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude + 0.00003,
+						latitude: mario.geometry.latitude + 0.00003
+					};
+				}
+				else if(rotation > 33 && rotation < 147){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude - 0.00003,
+						latitude: mario.geometry.latitude + 0.00003
+					};
+				}
+				else if(rotation > 147 && rotation < 213){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude - 0.00003,
+						latitude: mario.geometry.latitude - 0.00003
+					};
+				}
+				else if(rotation > 213 && rotation < 327){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude + 0.00003,
+						latitude: mario.geometry.latitude - 0.00003
+					};
+				}
+			}
+			// derecha y abajo
+			else if(axe0 > 0.6 && axe1 > 0.6){						
+				if(rotation > 327 || rotation < 33){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude + 0.00003,
+						latitude: mario.geometry.latitude - 0.00003
+					};
+				}
+				else if(rotation > 33 && rotation < 147){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude + 0.00003,
+						latitude: mario.geometry.latitude + 0.00003
+					};
+				}
+				else if(rotation > 147 && rotation < 213){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude - 0.00003,
+						latitude: mario.geometry.latitude + 0.00003
+					};
+				}
+				else if(rotation > 213 && rotation < 327){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude - 0.00003,
+						latitude: mario.geometry.latitude - 0.00003
+					};
+				}
+			}
+			// izquierda y abajo
+			else if(axe0 < -0.6 && axe1 > 0.6){
+				if(rotation > 327 || rotation < 33){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude - 0.00003,
+						latitude: mario.geometry.latitude - 0.00003
+					};
+				}
+				else if(rotation > 33 && rotation < 147){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude + 0.00003,
+						latitude: mario.geometry.latitude - 0.00003
+					};
+				}
+				else if(rotation > 147 && rotation < 213){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude + 0.00003,
+						latitude: mario.geometry.latitude + 0.00003
+					};
+				}
+				else if(rotation > 213 && rotation < 327){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude - 0.00003,
+						latitude: mario.geometry.latitude + 0.00003
+					};
+				}
+			}
+			// izquierda y arriba
+			else if(axe0 < -0.6 && axe1 < -0.6){						
+				if(rotation > 327 || rotation < 33){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude - 0.00003,
+						latitude: mario.geometry.latitude + 0.00003
+					};
+				}
+				else if(rotation > 33 && rotation < 147){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude - 0.00003,
+						latitude: mario.geometry.latitude - 0.00003
+					};
+				}
+				else if(rotation > 147 && rotation < 213){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude + 0.00003,
+						latitude: mario.geometry.latitude - 0.00003
+					};
+				}
+				else if(rotation > 213 && rotation < 327){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude + 0.00003,
+						latitude: mario.geometry.latitude + 0.00003
+					};
+				}
+			}
+
+			if(axe0 > 0.9){ // para derecha						
+				if(rotation > 327 || rotation < 33){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude + 0.00003,
+						latitude: mario.geometry.latitude
+					};
+				}
+				else if(rotation > 33 && rotation < 147){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude,
+						latitude: mario.geometry.latitude + 0.00003
+					};
+				}
+				else if(rotation > 147 && rotation < 213){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude - 0.00003,
+						latitude: mario.geometry.latitude
+					};
+				}
+				else if(rotation > 213 && rotation < 327){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude,
+						latitude: mario.geometry.latitude - 0.00003
+					};
+				}
+			}
+			else if (axe0 < -0.9){ // para izquierda
+				if(rotation > 327 || rotation < 33){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude - 0.00003,
+						latitude: mario.geometry.latitude
+					};
+				}
+				else if(rotation > 33 && rotation < 147){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude,
+						latitude: mario.geometry.latitude - 0.00003
+					};
+				}
+				else if(rotation > 147 && rotation < 213){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude + 0.00003,
+						latitude: mario.geometry.latitude
+					};
+				}
+				else if(rotation > 213 && rotation < 327){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude,
+						latitude: mario.geometry.latitude + 0.00003
+					};
+				}
+			}
+			if (axe1 > 0.9){ // abajo
+				if(rotation > 327 || rotation < 33){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude,
+						latitude: mario.geometry.latitude - 0.00003
+					};
+				}
+				else if(rotation > 33 && rotation < 147){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude + 0.00003,
+						latitude: mario.geometry.latitude
+					};
+				}
+				else if(rotation > 147 && rotation < 213){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude,
+						latitude: mario.geometry.latitude + 0.00003
+					};
+				}
+				else if(rotation > 213 && rotation < 327){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude - 0.00003,
+						latitude: mario.geometry.latitude
+					};
+				}
+			}
+			else if (axe1 < -0.9){ // arriba
+				if(rotation > 327 || rotation < 33){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude,
+						latitude: mario.geometry.latitude + 0.00003
+					};
+				}
+				else if(rotation > 33 && rotation < 147){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude - 0.00003,
+						latitude: mario.geometry.latitude
+					};
+				}
+				else if(rotation > 147 && rotation < 213){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude,
+						latitude: mario.geometry.latitude - 0.00003
+					};
+				}
+				else if(rotation > 213 && rotation < 327){
+					point = {
+						type: "point",  // autocasts as new Point()
+						longitude: mario.geometry.longitude + 0.00003,
+						latitude: mario.geometry.latitude
+					};
+				}
+			}
+
+			return point;
+
+			};
+
+
+      });
+    </script>
+  </head>
+
+  <body>
+    <div id="viewDiv"></div>
+  </body>
+</html>
